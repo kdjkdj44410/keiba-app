@@ -1,9 +1,12 @@
+import os
+import urllib.request
 import warnings
+
 warnings.filterwarnings("ignore")
 
 import io
+import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
-import japanize_matplotlib  # ←★この1行を追加！
 import numpy as np
 import pandas as pd
 import requests
@@ -13,8 +16,25 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, log_loss, roc_auc_score
 from sklearn.preprocessing import StandardScaler
 
-# 日本語フォント設定（japanize_matplotlibが自動設定するため、以下の行は削除またはそのまま放置でOKです）
-# plt.rcParams["font.family"] = ["Meiryo", "DejaVu Sans", "sans-serif"]
+# ==================================================
+# 日本語フォント自動ダウンロード＆設定 (Python 3.12+ 対応)
+# ==================================================
+FONT_NAME = "NotoSansJP-Regular.ttf"
+FONT_URL = (
+    f"https://github.com/google/fonts/raw/main/ofl/notosansjp/{FONT_NAME}"
+)
+
+if not os.path.exists(FONT_NAME):
+    try:
+        urllib.request.urlretrieve(FONT_URL, FONT_NAME)
+    except Exception:
+        pass
+
+if os.path.exists(FONT_NAME):
+    fm.fontManager.addfont(FONT_NAME)
+    plt.rcParams["font.family"] = "Noto Sans JP"
+else:
+    plt.rcParams["font.family"] = ["Meiryo", "DejaVu Sans", "sans-serif"]
 
 
 # ==================================================
