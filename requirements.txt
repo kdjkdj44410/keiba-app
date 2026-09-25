@@ -1,8 +1,7 @@
 streamlit
 pandas
 numpy
+openpyxl
+scikit-learn
 matplotlib
 requests
-beautifulsoup4
-scikit-learn
-openpyxl
