@@ -1,9 +1,10 @@
+import io
 import os
 import warnings
+from datetime import datetime
 
 warnings.filterwarnings("ignore")
 
-import io
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -48,9 +49,7 @@ st.caption("AI Top3予測率 × 直前リアルタイムオッズ")
 def calc_z(x):
     std = x.std()
     return (
-        x - x.mean()
-        if std == 0 or pd.isna(std)
-        else (x - x.mean()) / std
+        x - x.mean() if std == 0 or pd.isna(std) else (x - x.mean()) / std
     )
 
 
@@ -139,7 +138,9 @@ def make_best_features(df, group_col="レースID"):
 
 
 def fetch_netkeiba_odds(race_id):
-    """過去DB(db.netkeiba) & 当日出馬表(race.netkeiba) ハイブリッドオッズ取得"""
+    """
+    リアルタイムAPI -> 当日出馬表 -> 過去DB の3段階でオッズを取得
+    """
     clean_id = str(race_id).split(".")[0].strip()
     headers = {
         "User-Agent": (
@@ -148,77 +149,36 @@ def fetch_netkeiba_odds(race_id):
         )
     }
 
-    # パターン①: db.netkeiba.com (過去DB)
-    db_url = f"https://db.netkeiba.com/race/{clean_id}/"
+    # 1. netkeiba 当日リアルタイムオッズ JSON API (最も確実)
+    api_url = f"https://race.netkeiba.com/api/api_get_jra_odds.html?race_id={clean_id}&type=1"
     try:
-        res = requests.get(db_url, headers=headers, timeout=5)
+        res = requests.get(api_url, headers=headers, timeout=5)
         if res.status_code == 200:
-            soup = BeautifulSoup(
-                res.content, "html.parser", from_encoding="euc-jp"
-            )
-            table = soup.find("table", class_="race_table_01")
-            if table:
-                headers_text = [th.text.strip() for th in table.find_all("th")]
-                umaban_idx = next(
-                    (i for i, h in enumerate(headers_text) if "馬番" in h), None
-                )
-                tan_idx = next(
-                    (i for i, h in enumerate(headers_text) if "単勝" in h), None
-                )
-                ninki_idx = next(
-                    (i for i, h in enumerate(headers_text) if "人気" in h), None
-                )
-
-                odds_dict = {}
-                for tr in table.find_all("tr")[1:]:
-                    tds = tr.find_all("td")
-                    if len(tds) > max(
-                        filter(lambda x: x is not None, [umaban_idx, tan_idx])
-                    ):
+            data = res.json()
+            if data.get("status") == "Result" or "data" in data:
+                odds_data = data.get("data", {}).get("odds", {}).get("1", {})
+                if odds_data:
+                    odds_dict = {}
+                    for umaban_str, val in odds_data.items():
                         try:
-                            umaban = int(tds[umaban_idx].text.strip())
-                            tan_str = (
-                                tds[tan_idx].text.strip().replace(",", "")
-                            )
-                            odds_val = (
-                                float(tan_str)
-                                if tan_str and tan_str != "---"
-                                else np.nan
-                            )
-                            ninki_str = (
-                                tds[ninki_idx].text.strip()
-                                if ninki_idx is not None
-                                else ""
-                            )
-                            ninki_val = (
-                                int(ninki_str) if ninki_str.isdigit() else np.nan
-                            )
-
-                            if not pd.isna(odds_val):
-                                odds_dict[umaban] = {
-                                    "単勝": odds_val,
-                                    "人気": ninki_val,
-                                }
+                            umaban = int(umaban_str)
+                            tan_odds = float(val[0])
+                            ninki = int(val[1]) if len(val) > 1 and str(val[1]).isdigit() else np.nan
+                            odds_dict[umaban] = {"単勝": tan_odds, "人気": ninki}
                         except (ValueError, IndexError):
                             continue
-                if odds_dict:
-                    return pd.DataFrame.from_dict(odds_dict, orient="index")
+                    if odds_dict:
+                        return pd.DataFrame.from_dict(odds_dict, orient="index")
     except Exception:
         pass
 
-    # パターン②: race.netkeiba.com (当日出馬表)
-    shutuba_url = (
-        f"https://race.netkeiba.com/race/shutuba.html?race_id={clean_id}"
-    )
+    # 2. race.netkeiba.com (当日出馬表HTML解析)
+    shutuba_url = f"https://race.netkeiba.com/race/shutuba.html?race_id={clean_id}"
     try:
         res = requests.get(shutuba_url, headers=headers, timeout=5)
         if res.status_code == 200:
-            soup = BeautifulSoup(
-                res.content, "html.parser", from_encoding="euc-jp"
-            )
-            rows = soup.select("tr.HorseList")
-            if not rows:
-                rows = soup.select("div.RaceTableArea tr")
+            soup = BeautifulSoup(res.content, "html.parser", from_encoding="euc-jp")
+            rows = soup.select("tr.HorseList") or soup.select("div.RaceTableArea tr")
 
             odds_dict = {}
             for row in rows:
@@ -227,21 +187,15 @@ def fetch_netkeiba_odds(race_id):
                     continue
                 umaban = int(umaban_td.text.strip())
 
-                odds_td = row.select_one(
-                    "td.Odds, span[id^='odds-'], td[class*='Odds']"
-                )
+                odds_td = row.select_one("td.Odds, span[id^='odds-'], td[class*='Odds']")
                 odds_val = np.nan
                 if odds_td:
                     try:
-                        odds_val = float(
-                            odds_td.text.strip().replace(",", "")
-                        )
+                        odds_val = float(odds_td.text.strip().replace(",", ""))
                     except ValueError:
                         odds_val = np.nan
 
-                ninki_td = row.select_one(
-                    "td.Popular, span[id^='ninki-'], td[class*='Popular']"
-                )
+                ninki_td = row.select_one("td.Popular, span[id^='ninki-'], td[class*='Popular']")
                 ninki_val = np.nan
                 if ninki_td and ninki_td.text.strip().isdigit():
                     ninki_val = int(ninki_td.text.strip())
@@ -251,6 +205,39 @@ def fetch_netkeiba_odds(race_id):
 
             if odds_dict:
                 return pd.DataFrame.from_dict(odds_dict, orient="index")
+    except Exception:
+        pass
+
+    # 3. db.netkeiba.com (過去DB)
+    db_url = f"https://db.netkeiba.com/race/{clean_id}/"
+    try:
+        res = requests.get(db_url, headers=headers, timeout=5)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.content, "html.parser", from_encoding="euc-jp")
+            table = soup.find("table", class_="race_table_01")
+            if table:
+                headers_text = [th.text.strip() for th in table.find_all("th")]
+                umaban_idx = next((i for i, h in enumerate(headers_text) if "馬番" in h), None)
+                tan_idx = next((i for i, h in enumerate(headers_text) if "単勝" in h), None)
+                ninki_idx = next((i for i, h in enumerate(headers_text) if "人気" in h), None)
+
+                odds_dict = {}
+                for tr in table.find_all("tr")[1:]:
+                    tds = tr.find_all("td")
+                    if len(tds) > max(filter(lambda x: x is not None, [umaban_idx, tan_idx])):
+                        try:
+                            umaban = int(tds[umaban_idx].text.strip())
+                            tan_str = tds[tan_idx].text.strip().replace(",", "")
+                            odds_val = float(tan_str) if tan_str and tan_str != "---" else np.nan
+                            ninki_str = tds[ninki_idx].text.strip() if ninki_idx is not None else ""
+                            ninki_val = int(ninki_str) if ninki_str.isdigit() else np.nan
+
+                            if not pd.isna(odds_val):
+                                odds_dict[umaban] = {"単勝": odds_val, "人気": ninki_val}
+                        except (ValueError, IndexError):
+                            continue
+                if odds_dict:
+                    return pd.DataFrame.from_dict(odds_dict, orient="index")
     except Exception:
         pass
 
@@ -285,7 +272,7 @@ test_upload = st.sidebar.file_uploader(
     "予想レースデータ (today_race2.xlsx)", type=["xlsx", "csv"]
 )
 
-# ファイル読み込み処理 (アップロードなしの場合はローカルのデフォルトファイルを参照)
+# ファイル読み込み処理
 train_df, test_df = None, None
 
 try:
@@ -367,17 +354,27 @@ if train_df is not None and test_df is not None:
 
     selected_race_str = str(selected_race).split(".")[0].strip()
 
-    # セッション状態管理（手動修正やオッズ更新の保持）
+    # セッション状態管理（レースごとのデータ＆バージョン管理）
     state_key = f"race_data_{selected_race_str}"
+    version_key = f"version_{selected_race_str}"
+    last_update_key = f"last_updated_{selected_race_str}"
+
     if state_key not in st.session_state:
         st.session_state[state_key] = test_proc[
             test_proc["レースID"] == selected_race
         ].copy()
 
+    if version_key not in st.session_state:
+        st.session_state[version_key] = 0
+
     current_race_df = st.session_state[state_key]
 
     st.markdown("---")
     st.subheader("1. 直前オッズの取得・編集")
+
+    # オッズ更新状況の表示
+    if last_update_key in st.session_state:
+        st.caption(f"🕒 最終オッズ更新時刻: **{st.session_state[last_update_key]}**")
 
     btn_col1, btn_col2 = st.columns([1, 1])
 
@@ -390,30 +387,39 @@ if train_df is not None and test_df is not None:
             with st.spinner("最新オッズを取得中..."):
                 live_df = fetch_netkeiba_odds(selected_race_str)
                 if live_df is not None and not live_df.empty:
-                    df_temp = current_race_df.copy()
+                    df_temp = st.session_state[state_key].copy()
                     for umaban, row in live_df.iterrows():
                         mask = df_temp["馬番"] == umaban
-                        if not pd.isna(row["単勝"]):
+                        if "単勝" in row and not pd.isna(row["単勝"]):
                             df_temp.loc[mask, "単勝"] = row["単勝"]
-                        if not pd.isna(row["人気"]):
+                        if "人気" in row and not pd.isna(row["人気"]):
                             df_temp.loc[mask, "人気"] = row["人気"]
+                    
                     st.session_state[state_key] = df_temp
+                    st.session_state[version_key] += 1  # data_editor再描画トリガー
+                    st.session_state[last_update_key] = datetime.now().strftime("%H:%M:%S")
                     st.success("✅ 最新オッズの反映に成功しました！")
                     st.rerun()
                 else:
-                    st.error("⚠️ オッズの自動取得に失敗しました。")
+                    st.error("⚠️ オッズの自動取得に失敗しました。レースID（netkeibaの12桁ID）を確認してください。")
 
     with btn_col2:
         if st.button("🔄 初期データに戻す", use_container_width=True):
             st.session_state[state_key] = test_proc[
                 test_proc["レースID"] == selected_race
             ].copy()
+            st.session_state[version_key] += 1  # data_editor再描画トリガー
+            if last_update_key in st.session_state:
+                del st.session_state[last_update_key]
             st.rerun()
 
-    # データ編集テーブル
+    # データ編集テーブル（keyを動的変更して描画崩れを防止）
     st.caption("※以下の表で単勝オッズ・人気をタップして手動微調整が可能です。")
+    
+    editor_key = f"editor_{selected_race_str}_{st.session_state[version_key]}"
     edited_df = st.data_editor(
-        current_race_df[["馬番", "馬名", "Top3率", "人気", "単勝"]],
+        st.session_state[state_key][["馬番", "馬名", "Top3率", "人気", "単勝"]],
+        key=editor_key,
         num_rows="fixed",
         use_container_width=True,
         column_config={
@@ -423,9 +429,9 @@ if train_df is not None and test_df is not None:
         },
     )
 
-    # 編集結果をセッションに同期
+    # 編集結果をセッションに正確に同期
     for col in ["単勝", "人気"]:
-        st.session_state[state_key][col] = edited_df[col]
+        st.session_state[state_key][col] = edited_df[col].values
 
     st.markdown("---")
     # ==================================================
