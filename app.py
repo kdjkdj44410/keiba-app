@@ -1,11 +1,9 @@
 import os
-import urllib.request
 import warnings
 
 warnings.filterwarnings("ignore")
 
 import io
-import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -17,24 +15,18 @@ from sklearn.metrics import accuracy_score, log_loss, roc_auc_score
 from sklearn.preprocessing import StandardScaler
 
 # ==================================================
-# 日本語フォント自動ダウンロード＆設定 (Python 3.12+ 対応)
+# 日本語フォント設定（Streamlit Cloud / Linux最適化）
 # ==================================================
-FONT_NAME = "NotoSansJP-Regular.ttf"
-FONT_URL = (
-    f"https://github.com/google/fonts/raw/main/ofl/notosansjp/{FONT_NAME}"
-)
-
-if not os.path.exists(FONT_NAME):
-    try:
-        urllib.request.urlretrieve(FONT_URL, FONT_NAME)
-    except Exception:
-        pass
-
-if os.path.exists(FONT_NAME):
-    fm.fontManager.addfont(FONT_NAME)
-    plt.rcParams["font.family"] = "Noto Sans JP"
-else:
-    plt.rcParams["font.family"] = ["Meiryo", "DejaVu Sans", "sans-serif"]
+plt.rcParams["font.sans-serif"] = [
+    "Noto Sans CJK JP",
+    "Noto Sans JP",
+    "IPAPGothic",
+    "IPAexGothic",
+    "TakaoPGothic",
+    "DejaVu Sans",
+]
+plt.rcParams["font.family"] = "sans-serif"
+plt.rcParams["axes.unicode_minus"] = False  # マイナス記号の文字化け防止
 
 
 # ==================================================
