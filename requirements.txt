@@ -2,6 +2,7 @@ streamlit
 pandas
 numpy
 matplotlib
+japanize-matplotlib
 requests
 beautifulsoup4
 scikit-learn
