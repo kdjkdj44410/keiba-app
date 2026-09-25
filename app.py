@@ -1,9 +1,9 @@
 import warnings
-
 warnings.filterwarnings("ignore")
 
 import io
 import matplotlib.pyplot as plt
+import japanize_matplotlib  # ←★この1行を追加！
 import numpy as np
 import pandas as pd
 import requests
@@ -13,8 +13,9 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, log_loss, roc_auc_score
 from sklearn.preprocessing import StandardScaler
 
-# 日本語フォント設定
-plt.rcParams["font.family"] = ["Meiryo", "DejaVu Sans", "sans-serif"]
+# 日本語フォント設定（japanize_matplotlibが自動設定するため、以下の行は削除またはそのまま放置でOKです）
+# plt.rcParams["font.family"] = ["Meiryo", "DejaVu Sans", "sans-serif"]
+
 
 # ==================================================
 # ページ基本設定（スマホ表示最適化）
