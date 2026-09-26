@@ -181,17 +181,17 @@ def fetch_netkeiba_odds(race_id: str) -> pd.DataFrame:
         "X-Requested-With": "XMLHttpRequest",
     }
 
-try:
-    res = requests.get(url, headers=headers, timeout=10)
+    try:
+        res = requests.get(url, headers=headers, timeout=10)
 
-    st.write("### 🔎 API通信デバッグ")
-    st.write("URL:", url)
-    st.write("HTTP Status:", res.status_code)
-    st.write("Response Headers:", dict(res.headers))
-    st.code(res.text[:3000], language="text")
+        st.write("### 🔎 API通信デバッグ")
+        st.write("URL:", url)
+        st.write("HTTP Status:", res.status_code)
+        st.write("Response Headers:", dict(res.headers))
+        st.code(res.text[:3000], language="text")
 
-    res.raise_for_status()
-    json_data = res.json()
+        res.raise_for_status()
+        json_data = res.json()
 
         raw_odds = json_data.get("data", {}).get("odds", {}).get("1", {})
 
